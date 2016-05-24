@@ -31,7 +31,6 @@ class Tables(sqlContext: SQLContext, dsdgenDir: String, scaleFactor: Int) extend
 
   case class Table(name: String, partitionColumns: Seq[String], fields: StructField*) {
     val schema = StructType(fields)
-    val partitions = if (partitionColumns.isEmpty) 1 else 100
 
     def nonPartitioned: Table = {
       Table(name, Nil, fields : _*)
@@ -41,7 +40,8 @@ class Tables(sqlContext: SQLContext, dsdgenDir: String, scaleFactor: Int) extend
      *  If convertToSchema is true, the data from generator will be parsed into columns and
      *  converted to `schema`. Otherwise, it just outputs the raw data (as a single STRING column).
      */
-    def df(convertToSchema: Boolean) = {
+    def df(convertToSchema: Boolean, numPartition: Int) = {
+      val partitions = if (partitionColumns.isEmpty) 1 else numPartition
       val generatedData = {
         sparkContext.parallelize(1 to partitions, partitions).flatMap { i =>
           val localToolsDir = if (new java.io.File(dsdgen).exists) {
@@ -118,10 +118,11 @@ class Tables(sqlContext: SQLContext, dsdgenDir: String, scaleFactor: Int) extend
         format: String,
         overwrite: Boolean,
         clusterByPartitionColumns: Boolean,
-        filterOutNullPartitionValues: Boolean): Unit = {
+        filterOutNullPartitionValues: Boolean,
+        numPartitions: Int): Unit = {
       val mode = if (overwrite) SaveMode.Overwrite else SaveMode.Ignore
 
-      val data = df(format != "text")
+      val data = df(format != "text", numPartitions)
       val tempTableName = s"${name}_text"
       data.registerTempTable(tempTableName)
 
@@ -196,7 +197,8 @@ class Tables(sqlContext: SQLContext, dsdgenDir: String, scaleFactor: Int) extend
       useDoubleForDecimal: Boolean,
       clusterByPartitionColumns: Boolean,
       filterOutNullPartitionValues: Boolean,
-      tableFilter: String = ""): Unit = {
+      tableFilter: String = "",
+      numPartitions: Int = 100): Unit = {
     var tablesToBeGenerated = if (partitionTables) {
       tables
     } else {
@@ -219,7 +221,7 @@ class Tables(sqlContext: SQLContext, dsdgenDir: String, scaleFactor: Int) extend
     withSpecifiedDataType.foreach { table =>
       val tableLocation = s"$location/${table.name}"
       table.genData(tableLocation, format, overwrite, clusterByPartitionColumns,
-        filterOutNullPartitionValues)
+        filterOutNullPartitionValues, numPartitions)
     }
   }
 
